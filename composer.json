@@ -1,0 +1,9 @@
+{
+    "require": {
+        "php": "^8.2",
+        "symfony/http-client": "^7.4"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}
