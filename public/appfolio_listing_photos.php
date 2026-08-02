@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
+use League\Csv\Reader;
 use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -11,6 +12,7 @@ const APPFOLIO_API_BASE = 'https://api.appfolio.com';
 const APPFOLIO_LISTINGS_PATH = '/api/v0/listings';
 const APPFOLIO_UPDATED_FROM = '1970-01-01T00:00:00Z';
 const APPFOLIO_MAX_PAGES = 100;
+const APPFOLIO_PAGE_SIZE = 1000;
 const APPFOLIO_CONFIG_PATH = __DIR__ . '/../config/appfolio.ini';
 const UNITS_EXPORT_PATH = __DIR__ . '/../data/units_export.csv';
 
@@ -35,28 +37,17 @@ function loadAppFolioConfig(): array
 /** @return list<string> */
 function loadTargetUnitIds(): array
 {
-    $csv = new SplFileObject(UNITS_EXPORT_PATH);
-    $csv->setFlags(SplFileObject::READ_CSV | SplFileObject::SKIP_EMPTY);
-    $headers = $csv->fgetcsv();
+    $csv = Reader::from(UNITS_EXPORT_PATH, 'r')->setHeaderOffset(0);
 
-    if (!is_array($headers)) {
-        throw new RuntimeException('Unable to read the units export header.');
-    }
-
-    $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $headers[0]);
-    $columns = array_flip($headers);
-
-    if (!isset($columns['active'], $columns['unit_id'])) {
+    if (array_diff(['active', 'unit_id'], $csv->getHeader())) {
         throw new RuntimeException('The units export must contain active and unit_id columns.');
     }
 
     $unitIds = [];
-    foreach ($csv as $row) {
-        if (!is_array($row) || trim((string) ($row[$columns['active']] ?? '')) !== '1') {
-            continue;
+    foreach ($csv->getRecords() as $row) {
+        if (trim((string) ($row['active'] ?? '')) === '1') {
+            $unitIds[] = trim((string) ($row['unit_id'] ?? ''));
         }
-
-        $unitIds[] = trim((string) ($row[$columns['unit_id']] ?? ''));
     }
 
     $unitIds = array_values(array_unique($unitIds));
@@ -96,7 +87,7 @@ function fetchActiveListings(HttpClientInterface $client, array $targetUnitIds):
         $payload = $client->request('GET', APPFOLIO_LISTINGS_PATH, [
             'query' => [
                 'filters' => ['LastUpdatedAtFrom' => APPFOLIO_UPDATED_FROM],
-                'page' => ['number' => $page, 'size' => 1000],
+                'page' => ['number' => $page, 'size' => APPFOLIO_PAGE_SIZE],
             ],
         ])->toArray();
 
